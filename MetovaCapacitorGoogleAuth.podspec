@@ -6,6 +6,7 @@
     s.license = 'MIT'
     s.homepage = 'https://github.com/metova/CapacitorGoogleAuth.git'
     s.author = 'CodetrixStudio', 'Metova'
+    s.swift_version = '4.0'
     s.source = { :git => 'https://github.com/metova/CapacitorGoogleAuth.git', :tag => s.version.to_s }
     s.source_files = 'ios/Plugin/**/*.{swift,h,m,c,cc,mm,cpp}'
     s.ios.deployment_target  = '12.0'
