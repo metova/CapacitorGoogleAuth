@@ -41,7 +41,7 @@
     "android/",
     "!android/src/androidTest",
     "!android/src/test",
-    "MetovaStudioCapacitorGoogleAuth.podspec"
+    "MetovaCapacitorGoogleAuth.podspec"
   ],
   "keywords": [
     "capacitor",
