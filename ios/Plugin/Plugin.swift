@@ -53,32 +53,37 @@ public class GoogleAuth: CAPPlugin {
         DispatchQueue.main.async {
             if self.googleSignIn.hasPreviousSignIn() && !self.forceAuthCode {
                 self.googleSignIn.restorePreviousSignIn() { user, error in
-                if let error = error {
-                    self.signInCall?.reject(error.localizedDescription);
-                    return;
-                }
-                self.resolveSignInCallWith(user: user!)
+                    if let error = error {
+                        self.signInCall?.reject(error.localizedDescription);
+                        return;
+                    }
+                    
+                    // GoogleSignIn-iOS SDK 7.0 removed the `serverAuthCode` from `restoredPreviouslySignIn:`
+                    self.resolveSignInCallWith(user: user!)
                 }
             } else {
                 let presentingVc = self.bridge!.viewController!;
                 
-                self.googleSignIn.signIn(with: self.googleSignInConfiguration, presenting: presentingVc) { user, error in
+                self.googleSignIn.configuration = self.googleSignInConfiguration
+                self.googleSignIn.signIn(withPresenting: presentingVc) { result, error in
                     if let error = error {
-                        self.signInCall?.reject(error.localizedDescription, "\(error._code)");
-                        return;
+                        self.signInCall?.reject(error.localizedDescription, "\(error._code)")
+                        return
                     }
-                    if self.additionalScopes.count > 0 {
-                        // requesting additional scopes in GoogleSignIn-iOS SDK 6.0 requires that you sign the user in and then request additional scopes,
-                        // there's no method to include the additional scopes in the initial sign in request
-                        self.googleSignIn.addScopes(self.additionalScopes, presenting: presentingVc) { user, error in
-                            if let error = error {
-                                self.signInCall?.reject(error.localizedDescription);
-                                return;
-                            }
-                            self.resolveSignInCallWith(user: user!);
+                    
+                    guard self.additionalScopes.count > 0 else {
+                        self.resolveSignInCallWith(user: result!.user, serverAuthCode: result!.serverAuthCode)
+                        return
+                    }
+                    
+                    // requesting additional scopes in GoogleSignIn-iOS SDK 6.0+ requires that you sign the user in and then request additional scopes,
+                    // there's no method to include the additional scopes in the initial sign in request
+                    self.googleSignIn.currentUser?.addScopes(self.additionalScopes, presenting: presentingVc) { result, error in
+                        if let error = error {
+                            self.signInCall?.reject(error.localizedDescription)
+                            return
                         }
-                    } else {
-                        self.resolveSignInCallWith(user: user!);
+                        self.resolveSignInCallWith(user: result!.user, serverAuthCode: result!.serverAuthCode)
                     }
                 };
             }
@@ -88,19 +93,21 @@ public class GoogleAuth: CAPPlugin {
     @objc
     func refresh(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            if self.googleSignIn.currentUser == nil {
-                call.reject("User not logged in.");
+            guard let _ = self.googleSignIn.currentUser else {
+                call.reject("User not logged in.")
                 return
             }
-            self.googleSignIn.currentUser!.authentication.do { (authentication, error) in
-                guard let authentication = authentication else {
-                    call.reject(error?.localizedDescription ?? "Something went wrong.");
-                    return;
+            
+            self.googleSignIn.currentUser?.refreshTokensIfNeeded { user, error in
+                guard let user = user else { 
+                    call.reject(error?.localizedDescription ?? "Something went wrong.")
+                    return
                 }
+
                 let authenticationData: [String: Any] = [
-                    "accessToken": authentication.accessToken,
-                    "idToken": authentication.idToken ?? NSNull(),
-                    "refreshToken": authentication.refreshToken
+                    "accessToken": user.accessToken,
+                    "idToken": user.idToken ?? NSNull(),
+                    "refreshToken": user.refreshToken
                 ]
                 call.resolve(authenticationData);
             }
@@ -151,14 +158,14 @@ public class GoogleAuth: CAPPlugin {
         return nil;
     }
 
-    func resolveSignInCallWith(user: GIDGoogleUser) {
+    func resolveSignInCallWith(user: GIDGoogleUser, serverAuthCode: String? = nil) {
         var userData: [String: Any] = [
             "authentication": [
-                "accessToken": user.authentication.accessToken,
-                "idToken": user.authentication.idToken,
-                "refreshToken": user.authentication.refreshToken
+                "accessToken": user.accessToken,
+                "idToken": user.idToken,
+                "refreshToken": user.refreshToken
             ],
-            "serverAuthCode": user.serverAuthCode ?? NSNull(),
+            "serverAuthCode": serverAuthCode ?? NSNull(),
             "email": user.profile?.email ?? NSNull(),
             "familyName": user.profile?.familyName ?? NSNull(),
             "givenName": user.profile?.givenName ?? NSNull(),
